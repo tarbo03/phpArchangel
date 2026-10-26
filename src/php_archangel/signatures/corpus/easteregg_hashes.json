@@ -1,0 +1,32 @@
+{
+  "_comment": "Blind-hash corpus for PHP easter-egg assets. key = sha256 of exact response body. Bands refined per release family. Populated from public PHP release binaries; extend via scripts/corpus_build.py (built in Phase 2 tooling).",
+  "guids": {
+    "logo_php":  "=PHPE9568F36-D428-11d2-A769-00AA001ACF42",
+    "logo_zend": "=PHPE9568F35-D428-11d2-A769-00AA001ACF42",
+    "logo_bug":   "=PHPE9568F34-D428-11d2-A769-00AA001ACF42",
+    "credits":    "=PHPB8B5F2A0-3C92-11d3-A3A9-4C7B08C10000"
+  },
+  "bands": {
+    "5a0000000000000000000000000000000000000000000000000000000000000000": {
+      "label": "php4-era-logo", "version_band": "4.x", "strength": 0.80
+    },
+    "b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1": {
+      "label": "elephant-2007",  "version_band": "5.2-5.6", "strength": 0.82
+    },
+    "c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2": {
+      "label": "elephant-2015",  "version_band": "7.0-7.4", "strength": 0.82
+    },
+    "d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3": {
+      "label": "elephant-2019",  "version_band": "8.0-8.1", "strength": 0.82
+    },
+    "e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4": {
+      "label": "elephant-2023",  "version_band": "8.2-8.5", "strength": 0.82
+    }
+  },
+  "credits_markers": {
+    "PHP_GROUP": "4.x-7.x era credits page",
+    "PHP 8 Team": "8.x era credits page",
+    "Language Design & Development": "modern (8.0+) credits page"
+  },
+  "_note": "Placeholder hashes in this skeleton are populated by scripts/corpus_build.py, which downloads official php.net release tarballs per version and emits the exact sha256 of each asset. Never hand-edit 'bands' — always regenerate."
+}

@@ -1,0 +1,75 @@
+{
+  "schema": "php2shell.signature/1.0",
+  "_comment": "Data-driven signatures: probes + version logic. CVE verdicts are computed only through this file's logic — never hardcoded in Python. Extend for follow-on CVEs (DOM/SOAP/PDO UAF class) without code changes.",
+  "vulnerabilities": [
+    {
+      "cve": "CVE-2026-109618",
+      "title": "PHP OOM state corruption (longjmp bailout) — unauthenticated RCE",
+      "severity": "CRITICAL",
+      "affected": {
+        "branches": {
+          "8.5": {"fixed_in": "8.5.12"},
+          "8.4": {"fixed_in": "8.4.27"},
+          "8.3": {"fixed_in": "8.3.36"},
+          "8.2": {"fixed_in": "8.2.35"},
+          "8.1": {"fixed_in": null, "note": "EOL — unpatched unless backported"},
+          "8.0": {"fixed_in": null, "note": "EOL"},
+          "7.4": {"fixed_in": null, "note": "EOL"}
+        },
+        "below_branch": "5.4"
+      },
+      "preconditions": {
+        "sapi_vulnerable": ["mod_php", "cgi", "frankenphp", "litespeed"],
+        "sapi_conditional": ["fpm (requires in-app producer)"],
+        "config_signals": ["multipart POST accepted", "PHPSESSID cookie issued (non-strict)"]
+      },
+      "confirmation": {
+        "method": "oom_oracle",
+        "safe_note": "vulnerable worker may crash & auto-restart; patched returns clean E_ERROR",
+        "script": "verify.oom_oracle.run"
+      },
+      "remediation": "Upgrade to PHP 8.2.35 / 8.3.36 / 8.4.27 / 8.5.12+. EOL branches (<=8.1): upgrade required or set memory_limit=-1 and session.upload_progress.enabled=Off as partial mitigations."
+    },
+    {
+      "cve": "CVE-2026-109619",
+      "title": "PHP persistent-worker stale global state UAF — unauthenticated RCE",
+      "severity": "CRITICAL",
+      "affected": {
+        "branches": {
+          "8.5": {"fixed_in": "8.5.12"},
+          "8.4": {"fixed_in": "8.4.27"},
+          "8.3": {"fixed_in": "8.3.36"},
+          "8.2": {"fixed_in": "8.2.35"},
+          "8.1": {"fixed_in": null, "note": "EOL"},
+          "8.0": {"fixed_in": null, "note": "EOL"},
+          "7.4": {"fixed_in": null, "note": "EOL"}
+        },
+        "below_branch": "5.4"
+      },
+      "preconditions": {
+        "producer_consumer_same_worker": true,
+        "session_upload_progress_default": true,
+        "vectors": ["session.upload_progress", "ini diagnostics", "fatal_error_backtraces (8.5)"]
+      },
+      "confirmation": {
+        "method": "worker_affinity_stall",
+        "safe_note": "non-destructive reachability proof; silent write absent heap groom"
+      },
+      "remediation": "Same versions as CVE-2026-109618. Additionally consider session.upload_progress.enabled=Off defense-in-depth."
+    }
+  ],
+  "patch_floor": {
+    "_comment": "Known memory-safety fixes shipped with 8.5.12 beyond the two GHSAs (DOM/SOAP/PDO/Lexbor/Tidy UAF+overflow class). Presented as patch-floor guidance, CVE-pending, NOT inflated to confirmed RCEs.",
+    "reference_version": "8.5.12",
+    "fixed_in_reference": ["GH-23887 DOMXPath UAF", "GH-22895 SOAP Traversable heap UAF",
+                          "PDO bindValue __toString UAF", "Lexbor :lexbor-contains heap overflow",
+                          "Tidy tidyNode UAF", "dl() frameless cross-request UAF"]
+  },
+  "classifier_flags": {
+    "8.5.11_behavioral": {
+      "probes": ["print_r_nan_warning", "grapheme_search_fixes", "quoted_printable_hexfix",
+                 "wordwrap_endbreak", "opcache_dce"],
+      "fixed_in": "8.5.12"
+    }
+  }
+}

@@ -1,0 +1,15 @@
+services:
+  archangel-target:
+    image: php:8.4.26-apache
+    container_name: archangel-target
+    ports:
+      - "8088:80"
+    volumes:
+      - ./webroot:/var/www/html
+  archangel-patched:
+    image: php:8.4.27-apache
+    container_name: archangel-patched
+    ports:
+      - "8089:80"
+    volumes:
+      - ./webroot:/var/www/html
