@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🛡️ phpArchangel
+<img src="docs/images/logo.jpeg" alt="phpArchangel Logo" width="450" />
 
 **Evidence-Gated Verdicts · No Version Guessing**
 
