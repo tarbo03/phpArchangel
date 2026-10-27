@@ -109,6 +109,11 @@ class Finding:
         d = asdict(self)
         d["verdict"] = self.verdict.value
         d["severity"] = self.severity.value
+        # Evidence.strength is a @property, not a dataclass field — asdict
+        # skips it. Inject it here so downstream consumers (AI triage, the
+        # markdown report) can see evidence strength instead of reading 0.
+        for ed, eobj in zip(d.get("evidence", []), self.evidence):
+            ed["strength"] = eobj.strength.value
         return d
 
 

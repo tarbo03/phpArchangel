@@ -101,6 +101,7 @@ def run_scan(target_url: str, aggressive: bool = False, js_deep: bool = False,
             version, conf = reconcile_version(all_evidence)  # re-fuse
             result.php_version_estimate = version
             result.php_version_confidence = conf
+            if on_event: on_event('changelog')
 
         # ---- findings from the signature DB ------------------------------
         for sig in sig_db.get("vulnerabilities", []):

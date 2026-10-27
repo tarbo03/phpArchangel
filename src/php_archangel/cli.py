@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import os
 from pathlib import Path
 
 from .core.models import Verdict, ScanResult
@@ -22,16 +23,22 @@ from . import term as ui
 from .reporting.markdown import build_markdown_report
 
 
-def build_report_inline(d: dict) -> str:
+def build_report_inline(d: dict, show_progress: bool = True) -> str:
     """AI triage (best-effort, provider default = free openrouter) + markdown.
     Continues the scan flow to completion — the user gets the full report
     without running any second command. Degrades to deterministic if AI off."""
     try:
         from .ai.provider import (AIProvider, ProviderConfig,
                                   triage_findings, apply_triage)
+        from .progress import Spinner as _Spinner
         ai = AIProvider(ProviderConfig(provider="openrouter"))
         if ai.available:
-            t = triage_findings(ai, d)
+            _sp = _Spinner("AI-TRIAGE", enabled=show_progress and sys.stdout.isatty())
+            _sp.start()
+            try:
+                t = triage_findings(ai, d)
+            finally:
+                _sp.stop()
             if t:
                 d = apply_triage(d, t)
                 d["ai_spend"] = ai.meter.report()
@@ -74,10 +81,35 @@ def cmd_scan(args: argparse.Namespace) -> int:
               "with URL as positional argument)", file=sys.stderr)
         return 2
 
-    result = run_scan(url, aggressive=args.aggressive,
-                      js_deep=args.js_deep,
-                      changelog_probes=not args.no_changelog_probes,
-                      verify_mode=args.verify_mode)
+    use_progress = (
+        not getattr(args, "no_progress", False) and sys.stdout.isatty()
+    )
+    if use_progress:
+        from .progress import ProgressBar
+        from .term import S as _S
+        print(f"  {_S.CYAN}\u25b8{_S.RESET} {url}")
+        pb = ProgressBar(
+            phases=["entry", "easteregg", "components", "js",
+                    "changelog", "reconcile", "verdicts"],
+            label="RECON",
+        )
+        pb.start("entry")
+        try:
+            result = run_scan(url, aggressive=args.aggressive,
+                              js_deep=args.js_deep,
+                              changelog_probes=not args.no_changelog_probes,
+                              verify_mode=args.verify_mode,
+                              verbose=False,
+                              on_event=pb.tick)
+        except BaseException:
+            pb.fail("interrupted")
+            raise
+        pb.done()
+    else:
+        result = run_scan(url, aggressive=args.aggressive,
+                          js_deep=args.js_deep,
+                          changelog_probes=not args.no_changelog_probes,
+                          verify_mode=args.verify_mode)
 
     ui.print_target_panel(url, result.sapi_guess,
                            result.php_version_estimate,
@@ -100,8 +132,25 @@ def cmd_scan(args: argparse.Namespace) -> int:
                 "Skip and go straight to report"])
             if choice in (0, 1):
                 from .verify.oom_oracle import confirm_findings
+                from .progress import ProgressBar as _PB
                 ui.phase("ORACLE — 3-TIER ESCALATION")
-                result = confirm_findings(result, mode="oom" if choice == 0 else "affinity")
+                _oracle_phases = (["tier_1", "tier_2", "tier_3"] if choice == 0
+                                  else ["step_1", "step_2"])
+                _oracle_pb = _PB(phases=_oracle_phases, label="ORACLE",
+                                  enabled=use_progress)
+                _oracle_pb.start()
+                try:
+                    result = confirm_findings(
+                        result,
+                        mode="oom" if choice == 0 else "affinity",
+                        on_event=_oracle_pb.tick,
+                        verbose=not use_progress,
+                    )
+                except BaseException:
+                    _oracle_pb.fail("oracle interrupted")
+                    raise
+                _oracle_pb.done(f"{_oracle_pb.current}/{_oracle_pb.total} "
+                                 + ("tiers" if choice == 0 else "steps"))
                 ui.phase("ORACLE COMPLETE")
                 ui.findings_table(result.to_dict().get("findings", []))
                 learned = {}
@@ -111,20 +160,89 @@ def cmd_scan(args: argparse.Namespace) -> int:
                             learned = e.detail.get("learned") or {}
                 for k, v in learned.items():
                     ui.intel_line(k, str(v))
+        elif args.auto_confirm:
+            # Auto-confirm in interactive mode — run oracle without prompting
+            from .verify.oom_oracle import confirm_findings
+            from .progress import ProgressBar as _PB
+            ui.phase("ORACLE — 3-TIER ESCALATION")
+            _oracle_pb = _PB(phases=["tier_1", "tier_2", "tier_3"],
+                              label="ORACLE", enabled=use_progress)
+            _oracle_pb.start()
+            try:
+                result = confirm_findings(
+                    result, mode="oom",
+                    on_event=_oracle_pb.tick,
+                    verbose=not use_progress,
+                )
+            except BaseException:
+                _oracle_pb.fail("oracle interrupted")
+                raise
+            _oracle_pb.done(f"{_oracle_pb.current}/{_oracle_pb.total} tiers")
+            ui.phase("ORACLE COMPLETE")
+            ui.findings_table(result.to_dict().get("findings", []))
+            learned = {}
+            for f in result.findings:
+                for e in f.evidence:
+                    if e.kind == "oracle_oom_divergence":
+                        learned = e.detail.get("learned") or {}
+            for k, v in learned.items():
+                ui.intel_line(k, str(v))
     elif probables and args.auto_confirm:
         from .verify.oom_oracle import confirm_findings
-        result = confirm_findings(result, mode="oom")
+        from .progress import ProgressBar as _PB
+        _oracle_pb = _PB(phases=["tier_1", "tier_2", "tier_3"],
+                          label="ORACLE", enabled=use_progress)
+        _oracle_pb.start()
+        try:
+            result = confirm_findings(result, mode="oom",
+                                      on_event=_oracle_pb.tick,
+                                      verbose=not use_progress)
+        except BaseException:
+            _oracle_pb.fail("oracle interrupted")
+            raise
+        _oracle_pb.done(f"{_oracle_pb.current}/{_oracle_pb.total} tiers")
 
     # ---- Gate 2: exploitation (authorized use only)
     confirmed = [f for f in result.findings if f.verdict == Verdict.CONFIRMED]
-    if confirmed and not args.no_interact and not args.no_exploit:
-        if not args.auto_exploit:
+    if confirmed and not args.no_exploit:
+        do_exploit = False
+        
+        if args.auto_exploit:
+            do_exploit = True
+        elif not args.no_interact:
             choice = _ask("Confirmed vulnerability present. Attempt exploit?",
                           ["Attempt exploit (test command on target)",
                            "Report only"], default=1)
             if choice == 0:
-                from .exploit.angel_sword import exploit_confirmed
-                result = exploit_confirmed(result)
+                do_exploit = True
+                
+        if do_exploit:
+            from .exploit.angel_sword import exploit_confirmed
+            from .progress import ProgressBar as _PB
+            _exp_pb = _PB(
+                phases=["rotate", "stage1", "stage2", "stage3"],
+                label="EXPLOIT", enabled=use_progress,
+            )
+            _exp_pb.start()
+            try:
+                result = exploit_confirmed(
+                    result,
+                    on_event=_exp_pb.tick,
+                    verbose=not use_progress,
+                )
+            except BaseException:
+                _exp_pb.fail("exploit interrupted")
+                raise
+            # exploit_confirmed appends the outcome as the last note;
+            # use it to decide success vs failure honestly.
+            _last_note = (result.notes or [""])[-1]
+            if "chain executed" in _last_note:
+                _exp_pb.done(f"{_exp_pb.current}/{_exp_pb.total} stages")
+            else:
+                _exp_pb.fail(
+                    f"failed at stage {_exp_pb.current + 1}"
+                    f" (see findings.json)"
+                )
 
     # ---- outputs
     outdir = Path(args.outdir or f"./archangel-out/{url.replace('://','_').replace('/','')}")
@@ -133,23 +251,38 @@ def cmd_scan(args: argparse.Namespace) -> int:
     d["fingerprint"] = result.fingerprint_hash()
     (outdir / "findings.json").write_text(
         json.dumps(d, indent=2, default=str), encoding="utf-8")
-    md = build_report_inline(d)
+    md = build_report_inline(d, show_progress=use_progress)
     (outdir / "report.md").write_text(md, encoding="utf-8")
     print(f"[+] Markdown report -> {outdir/'report.md'}")
 
-    # Present the finished report to the user — paged when interactive
-    # (like git/man), full dump when piped (CI/automation friendly)
-    import sys
-    print("\n" + "=" * 72)
+    # Present the finished report to the user.
+    # If interactive, open the markdown file in the system's default GUI editor.
+    # If piped/automated, dump the markdown directly to stdout.
     if sys.stdout.isatty():
         import subprocess
+        import platform
+        report_path = outdir / "report.md"
+        print(f"\n[+] Report saved to: {report_path}")
+        print(f"[+] Opening in default text editor...")
         try:
-            subprocess.run(["less", "-R"], input=md.encode())   # q to quit
-        except (FileNotFoundError, KeyboardInterrupt):
+            if platform.system() == "Linux":
+                # xdg-open triggers the default GUI app (e.g., Mousepad, gedit, VS Code)
+                subprocess.Popen(["xdg-open", str(report_path)], 
+                                 stdout=subprocess.DEVNULL, 
+                                 stderr=subprocess.DEVNULL)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", str(report_path)])
+            elif platform.system() == "Windows":
+                os.startfile(str(report_path))
+            else:
+                raise OSError("Unknown OS")
+        except Exception as e:
+            print(f"[!] Could not open GUI editor ({e}). Falling back to terminal output.\n")
             print(md)
     else:
+        print("\n" + "=" * 72)
         print(md)
-    print("=" * 72)
+        print("=" * 72)
     print(f"\n[+] JSON findings -> {outdir/'findings.json'} "
           f"(fingerprint {result.fingerprint_hash()})")
     return 0
@@ -178,21 +311,39 @@ def cmd_report(args: argparse.Namespace) -> int:
             else:
                 print(f"[!] AI tier unavailable: no key for {args.ai_provider} "
                       f"(run: php_archangel config)")
-                if t:
-                    data = apply_triage(data, t)
-                    data["ai_spend"] = ai.meter.report()
-                    print(f"[+] AI triage via {ai.cfg.provider}/{ai.cfg.model} "
-                          f"({ai.meter.report()})")
         except Exception as e:
             print(f"[!] AI tier skipped: {e}")
     md = build_markdown_report(data, ai_narrative=not args.no_ai)
-    Path(args.output).write_text(md, encoding="utf-8")
-    print(f"[+] report -> {args.output}")
+    report_path = Path(args.output)
+    report_path.write_text(md, encoding="utf-8")
+    print(f"[+] report -> {report_path}")
+
+    if sys.stdout.isatty():
+        import subprocess
+        import platform
+        print("[+] Opening in default text editor...")
+        try:
+            if platform.system() == "Linux":
+                subprocess.Popen(["xdg-open", str(report_path)],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", str(report_path)])
+            elif platform.system() == "Windows":
+                os.startfile(str(report_path))
+        except Exception as e:
+            print(f"[!] Could not open GUI editor ({e}).")
     return 0
 
 
 def main(argv: Optional[list[str]] = None) -> int:
-    ap = argparse.ArgumentParser(prog="php_archangel",
+    # banner even on -h/--help: print before argparse renders its view
+    import sys as _sys
+    _args = argv if argv is not None else _sys.argv[1:]
+    if "-h" in _args or "--help" in _args or not _args:
+        from .term import print_banner
+        print_banner()
+    ap = argparse.ArgumentParser(prog="archangel",
                                  description="PHP runtime security posture analyzer (php_Archangel)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -208,6 +359,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     s.add_argument("--no-exploit", action="store_true")
     s.add_argument("--no-interact", action="store_true")
     s.add_argument("--outdir", default="")
+    s.add_argument("--no-progress", action="store_true",
+                   help="disable the live progress bar (falls back to verbose output)")
     s.set_defaults(func=cmd_scan)
 
     r = sub.add_parser("report", help="generate Markdown report from findings.json")
@@ -223,12 +376,6 @@ def main(argv: Optional[list[str]] = None) -> int:
     c = sub.add_parser("config", help="set AI provider API keys (stored locally)")
     c.add_argument("--show", action="store_true", help="display stored keys (masked)")
     c.set_defaults(func=lambda a: (_show_keys() if a.show else _setup_keys()) or 0)
-
-    u = sub.add_parser("ui", help="Rich hybrid console (needs [ui] extra)")
-    u.add_argument("url", nargs="?", help="optional target to pre-arm")
-    u.add_argument("--splash", action="store_true",
-                   help="full-quality image on Kitty/iTerm2 before the dashboard")
-    u.set_defaults(func=lambda a: _run_ui(a.url, a.splash) or 0)
 
     m = sub.add_parser("mcp", help="run MCP server (stdio default)")
     m.add_argument("--http", action="store_true", help="Streamable HTTP transport")
@@ -247,10 +394,6 @@ def _run_mcp(args: argparse.Namespace) -> int:
     return 0
 
 
-if __name__ == "__main__":
-    sys.exit(main())
-
-
 def _setup_keys() -> None:
     from .config import interactive_setup
     interactive_setup()
@@ -261,13 +404,5 @@ def _show_keys() -> None:
     show_masked()
 
 
-def _run_tui(url):
-    from .tui import run_tui
-    run_tui(target_url=url)
-    return None
-
-
-def _run_ui(url, splash):
-    from .ui import run_dashboard
-    run_dashboard(target_url=url, splash=splash)
-    return 0
+if __name__ == "__main__":
+    sys.exit(main())

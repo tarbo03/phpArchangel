@@ -58,7 +58,7 @@ def _was_worker_abort(status: int, body_len: int) -> bool:
 
 
 def oom_oracle(client: TargetClient, php_entry: str = "/index.php",
-               verbose: bool = False) -> Optional[Evidence]:
+               verbose: bool = False, on_event=None) -> Optional[Evidence]:
     """
     THREE-TIER ESCALATION v2 — observe what the target tells us.
 
@@ -178,6 +178,9 @@ def oom_oracle(client: TargetClient, php_entry: str = "/index.php",
             print(f"    [oracle] tier {tier_idx}/3 ({body_mb}MB{note}) "
                   f"step1={s1} step2={s2} learned={ {**harvest1, **harvest2} or '{}' }")
 
+        if on_event:
+            on_event(f"tier_{tier_idx}")
+
         if step1_abort and step2_abort and s1 == 0 and s2 == 0:
             # both connections torn on the FIRST tier pair with no prior response
             # likely unreachable target — inconclusive, never CONFIRMED
@@ -215,7 +218,7 @@ def oom_oracle(client: TargetClient, php_entry: str = "/index.php",
 
 
 def affinity_oracle(client: TargetClient, php_entry: str = "/index.php",
-                    verbose: bool = False) -> Optional[Evidence]:
+                    verbose: bool = False, on_event=None) -> Optional[Evidence]:
     """
     CVE-2026-109619 same-worker confirmation: pinned keep-alive connection,
     0x4148-style stall primitive (producer/consumer on one connection rides
@@ -231,12 +234,14 @@ def affinity_oracle(client: TargetClient, php_entry: str = "/index.php",
     c1 = client.pinned("POST", php_entry, **{})
     # pinned() wants request kwargs; use direct call for clarity:
     r1 = client.pinned_POST_multipart(php_entry, b1, boundary)
+    if on_event: on_event("step_1")
     time.sleep(1.5)  # > min_freq default 1s
     parts2 = [("PHPSESSID", SID),
               ("PHP_SESSION_UPLOAD_PROGRESS", b"pwn2"),
               ("g", b"D" * 4096)]
     r2 = client.pinned_POST_multipart(php_entry, _multipart(parts2, b"archangelAff2"),
                                       b"archangelAff2")
+    if on_event: on_event("step_2")
     if verbose:
         print(f"    [affinity] step1={r1.status} step2={r2.status}")
 
@@ -251,15 +256,16 @@ def affinity_oracle(client: TargetClient, php_entry: str = "/index.php",
                                        "stall below threshold"})
 
 
-def confirm_findings(result: ScanResult, mode: str = "oom") -> ScanResult:
+def confirm_findings(result: ScanResult, mode: str = "oom", on_event=None,
+                     verbose: bool = True) -> ScanResult:
     """Attach oracle evidence to matching CVE findings; promote/retract on it."""
     client = TargetClient(result.target)
     ev: Optional[Evidence]
     try:
         if mode == "oom":
-            ev = oom_oracle(client, verbose=True)
+            ev = oom_oracle(client, verbose=verbose, on_event=on_event)
         else:
-            ev = affinity_oracle(client, verbose=True)
+            ev = affinity_oracle(client, verbose=verbose, on_event=on_event)
     finally:
         client.close()
     if ev is None:

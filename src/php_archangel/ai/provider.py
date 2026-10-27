@@ -174,7 +174,8 @@ def triage_findings(provider: AIProvider, scan_dict: dict) -> Optional[dict]:
         {"id": f.get("id"), "cve": f.get("cve_id"), "title": f.get("title"),
          "verdict": f.get("verdict"), "severity": f.get("severity"),
          "evidence_strength": max(
-             (e.get("strength", 0) for e in [{}]), default=0),
+             (e.get("strength", 0) for e in f.get("evidence", [])),
+             default=0),
          "description": (f.get("description") or "")[:400],
          "php_version": scan_dict.get("php_version", {}).get("estimate"),
          "sapi": scan_dict.get("php_version", {}).get("sapi_guess")}
@@ -185,26 +186,37 @@ def triage_findings(provider: AIProvider, scan_dict: dict) -> Optional[dict]:
         return None
 
     user = "Scan findings:\n" + json.dumps(findings_payload, indent=1)
-    try:
-        text = provider.complete(TRIAGE_SYSTEM, user, max_tokens=4000)
-    except BudgetExhausted:
-        return None
-    if not text:
-        return None
-    # Tolerant extraction: models wrap JSON in fences / prose despite instructions
-    t = (text or "").strip()
-    if t.startswith("```"):
-        t = t.strip("`")
-        if t.lower().startswith("json"):
-            t = t[4:]
-    if "{" in t and "}" in t:
-        t = t[t.index("{"):t.rindex("}") + 1]
-    try:
-        data = json.loads(t)
-    except (ValueError, IndexError) as e:
-        print(f"[!] AI tier: unparseable model output ({type(e).__name__}: {e})")
-        print(f"    raw head: {(text or '')[:160]!r}")
-        return None
+    
+    # Retry up to 2 times if the model outputs malformed JSON
+    for attempt in range(2):
+        try:
+            text = provider.complete(TRIAGE_SYSTEM, user, max_tokens=4000)
+        except BudgetExhausted:
+            return None
+            
+        if not text:
+            continue  # API failed, try again if budget allows
+            
+        # Tolerant extraction: models wrap JSON in fences / prose despite instructions
+        t = (text or "").strip()
+        if t.startswith("```"):
+            t = t.strip("`")
+            if t.lower().startswith("json"):
+                t = t[4:]
+        if "{" in t and "}" in t:
+            t = t[t.index("{"):t.rindex("}") + 1]
+            
+        try:
+            data = json.loads(t)
+            # Success! Break out of the loop to process the data
+            break
+        except (ValueError, IndexError) as e:
+            print(f"[!] AI tier: unparseable model output (attempt {attempt+1}/2) ({type(e).__name__}: {e})")
+            if attempt == 1:
+                print(f"    raw head: {(text or '')[:160]!r}")
+                return None
+    else:
+        return None  # Exited loop without breaking (both attempts failed)
 
     # ------- severity capping: enforced in code, never trusted to the model
     rank = {s: i for i, s in enumerate(_ORDER)}
