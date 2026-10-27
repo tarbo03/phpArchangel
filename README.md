@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/images/logo.jpeg" alt="phpArchangel Logo" width="450" />
+<img src="docs/images/logo.png" alt="phpArchangel Logo" width="450" />
 
 **Evidence-Gated Verdicts · No Version Guessing**
 
