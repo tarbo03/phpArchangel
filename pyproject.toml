@@ -19,7 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 browser = ["playwright>=1.44"]
-mcp     = ["mcp>=1.0"]
+mcp     = ["mcp>=1.0,<2.0"]
 ai      = ["openai>=1.40", "anthropic>=0.34"]
 all     = ["php-archangel[browser,mcp,ai]"]
 

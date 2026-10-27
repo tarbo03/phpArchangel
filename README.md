@@ -179,6 +179,86 @@ archangel scan https://example.org/index.php --auto-confirm
 
 The `--auto-exploit` switch. Kindly note that this is **not recommended for routine scanning** and should be restricted to a controlled laboratory or an engagement that expressly authorizes code-execution testing. 
 
+## 🤔 MCP Server Integration
+
+`phpArchangel` includes a built-in Model Context Protocol (MCP) server. This allows AI agents (like Claude Desktop or Cursor) to autonomously call the scanner, evaluate the structured evidence, and summarize the risk for you.
+
+### The Dual-Gate Safety Model
+By default, the AI can only run safe recon (`scan_target`) and oracle checks (`confirm_cve`). **AI models cannot trigger the `exploit_target` tool unless you explicitly start the server with the `--allow-exploit` flag.** 
+
+### Starting the Server
+To run the MCP server over Standard I/O (stdio) for Claude Desktop:
+
+```bash
+archangel mcp
+```
+
+To run it over HTTP (e.g., for a remote agent):
+
+```bash
+archangel mcp --http --port 8765
+```
+
+### Claude Desktop Configuration
+To give Claude the ability to run `phpArchangel`, add this to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "phpArchangel": {
+      "command": "/home/kali/doings/php_archangel/venv/bin/archangel",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+> [!IMPORTANT]
+> **Path Requirement:** If you installed `phpArchangel` in a virtual environment, you **must** use the absolute path to the `archangel` executable inside your `venv/bin/` folder (as shown above). Pointing to just `"command": "archangel"` will fail because Claude Desktop does not inherit your shell's `$PATHu`.
+>
+> To allow the AI to execute the RCE proof-of-concept, change the args to `["mcp", "--allow-exploit"]`.
+
+---
+## 🤔 MCP Server Integration
+
+`phpArchangel` includes a built-in Model Context Protocol (MCP) server. This allows AI agents (like Claude Desktop or Cursor) to autonomously call the scanner, evaluate the structured evidence, and summarize the risk for you.
+
+### The Dual-Gate Safety Model
+By default, the AI can only run safe recon (`scan_target`) and oracle checks (`confirm_cve`). **AI models cannot trigger the `exploit_target` tool unless you explicitly start the server with the `--allow-exploit` flag.** 
+
+### Starting the Server
+To run the MCP server over Standard I/O (stdio) for Claude Desktop:
+
+```bash
+archangel mcp
+```
+
+To run it over HTTP (e.g., for a remote agent):
+
+```bash
+archangel mcp --http --port 8765
+```
+
+### Claude Desktop Configuration
+To give Claude the ability to run `phpArchangel`, add this to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "phpArchangel": {
+      "command": "/home/kali/doings/php_archangel/venv/bin/archangel",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+> [!IMPORTANT]
+> **Path Requirement:** If you installed `phpArchangel` in a virtual environment, you **must** use the absolute path to the `archangel` executable inside your `venv/bin/` folder (as shown above). Pointing to just `"command": "archangel"` will fail because Claude Desktop does not inherit your shell's `$PATHu`.
+>
+> To allow the AI to execute the RCE proof-of-concept, change the args to `["mcp", "--allow-exploit"]`.
+
+---
 ## Local laboratory guidance
 
 For safe evaluation, use an **isolated Docker network** with intentionally vulnerable and patched PHP builds that have been independently verified against the relevant advisory for testing this tool. The tool proposes comparing `php:8.4.26-apache` and `php:8.4.27-apache`; **do not assume those images correspond to a verified vulnerable/patched pair without checking the official PHP release and security information.**
