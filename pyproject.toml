@@ -1,27 +1,30 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "php-archangel"
-version = "1.0.0"
-description = "PHP runtime security posture analyzer — detects php2shell-class CVEs (CVE-2026-109618/109619) detection, verification, and AI triage"
+name = "php-archangel-mcp"
+version = "1.0.3"
+description = "Precision-first PHP vulnerability scanner for php2shell (CVE-2026-109618/109619). Zero false positives by design, verified by a deterministic OOM Oracle."
+authors = [{ name = "Godwin Tarbo" }]
 readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
-license = { text = "MIT" }
-authors = [{ name = "php_Archangel project" }]
-keywords = ["php", "security", "cve-2026-109618", "cve-2026-109619", "php-archangel", "php_archangel", "scanner", "mcp"]
-
 dependencies = [
     "httpx>=0.27,<1.0",
     "packaging>=23.0",
+    "mcp>=1.0,<2.0",
 ]
 
 [project.optional-dependencies]
 browser = ["playwright>=1.44"]
-mcp     = ["mcp>=1.0,<2.0"]
+mcp     = []
 ai      = ["openai>=1.40", "anthropic>=0.34"]
-all     = ["php-archangel[browser,mcp,ai]"]
+all     = ["php-archangel-mcp[browser,mcp,ai]"]
+
+[project.urls]
+Homepage = "https://github.com/tarbo03/phpArchangel"
 
 [project.scripts]
 archangel = "php_archangel.cli:main"

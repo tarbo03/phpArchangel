@@ -1,3 +1,5 @@
+<!-- mcp-name: phpArchangel -->
+
 <div align="center">
 
 <img src="docs/images/logo.png" alt="phpArchangel Logo" width="450" />
