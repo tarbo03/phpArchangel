@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from typing import Optional
 import os
 from pathlib import Path
 
@@ -389,6 +390,9 @@ def main(argv: Optional[list[str]] = None) -> int:
 
 
 def _run_mcp(args: argparse.Namespace) -> int:
+    if args.http:
+        print("[!] WARNING: HTTP transport is exposed. Ensure you are using a firewall or reverse proxy.")
+        print("[!] It is highly recommended to use stdio for local MCP connections.")
     from .mcp.server import serve
     serve(http=args.http, port=args.port, allow_exploit=args.allow_exploit)
     return 0

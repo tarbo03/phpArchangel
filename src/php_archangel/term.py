@@ -110,7 +110,7 @@ def _build_banner(width: int | None = None) -> str:
     rule = f"{S.CYAN}{'─' * art_width}{S.RESET}"
 
     t1 = "PHP vulnerability discovery · CVE-2026-109618/109619"
-    t2 = f"v1.0.0  ·  Author: Godwin Tarbo  ·  github.com/tarbo03"
+    t2 = f"v1.0.4  ·  Author: Godwin Tarbo  ·  github.com/tarbo03"
 
     out = "\n".join(lines)
     out += "\n\n" + rule + "\n"
