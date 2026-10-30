@@ -5,3 +5,8 @@ __pycache__/
 archangel-out/
 *.egg-info/
 .git/
+dist/
+build/
+*.egg-info/
+__pycache__/
+*.pyc
